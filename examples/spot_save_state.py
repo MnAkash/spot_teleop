@@ -27,7 +27,9 @@ def main() -> int:
 
     controller.undock()
     time.sleep(3.0)  # wait for the robot to undock
-    controller.reset_pose()
+    home_pose = [0.55, 0.0, 0.55, 0.0, 0.5, 0, 0.8660254]
+    controller.reset_pose(home_pose)
+    controller.send_gripper(1.0)  # open gripper
     time.sleep(3.0)  # wait for the robot to get to the reset pose
     # Print state for 5 seconds (approx 1 Hz).
     for _ in range(5):
