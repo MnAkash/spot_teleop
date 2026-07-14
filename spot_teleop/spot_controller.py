@@ -220,6 +220,20 @@ class SpotRobotController:
         pose = get_a_tform_b(snap, frame_name, "hand")
         return pose
 
+    def current_gripper_torque(self) -> float:
+        """Return the gripper motor's joint torque (arm0.f1x load, N*m).
+
+        This reflects actuator effort against whatever the jaw is
+        contacting, independent of contact location/area on the pad.
+        Convert to clamp force via a calibrated torque/lever-arm curve
+        as a function of gripper_open_percentage.
+        """
+        joint_states = self.current_state().kinematic_state.joint_states
+        for js in joint_states:
+            if js.name == "arm0.f1x":
+                return float(js.load.value)
+        raise RuntimeError("arm0.f1x joint not found in robot state")
+
     def current_gripper(self) -> float:
         man = self.current_state().manipulator_state
         return float(man.gripper_open_percentage)

@@ -192,6 +192,7 @@ Each saved `.npz` contains one session dictionary with the following keys:
 | **arm\_joint\_names** | `(J,)` (string)       | The J joint-names (strings) for all recorded "arm0.*" joints.                     |
 | **arm\_q**            | `(N, J)` (float32)    | Joint positions at each timestep.                                                  |
 | **arm\_dq**           | `(N, J)` (float32)    | Joint velocities at each timestep.                                                 |
+| **gripper\_load**     | `(N, 1)` (float32)    | Gripper motor load (`arm0.f1x` torque, N·m); proxy for grasp force.               |
 | **ee\_pose**          | `(N, 7)` (float32)    | End‑effector pose in body frame: `[tx,ty,tz,qx,qy,qz,qw]`.                         |
 | **vision\_in\_body**  | `(N, 7)` (float32)    | Vision‑frame origin expressed in body frame (same format as `ee_pose`).            |
 | **body\_vel**         | `(N, 6)` (float32)    | Body linear & angular velocity in vision frame: `[vx,vy,vz,wx,wy,wz]`.             |
@@ -217,6 +218,7 @@ data/
 |        ├── eef_pos                (shape=(N, 3), dtype=float32)
 |        ├── eef_quat               (shape=(N, 4), dtype=float32)
 |        ├── gripper                (shape=(N, 1), dtype=float32)
+|        ├── gripper_load           (shape=(N, 1), dtype=float32)
 |        ├── images_0               (shape=(N, 240, 320, 3), dtype=uint8)
 |        ├── images_0_depth         (shape=(N, 240, 320), dtype=uint16)
 |        ├── images_1               (shape=(N, 240, 320, 3), dtype=uint8)

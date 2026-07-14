@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-demo_recorder.py  –  Continuous Spot logger for diffusion-policy demos
+demo_recorder.py  -  Continuous Spot logger for diffusion-policy demos
 ---------------------------------------------------------------------
 • Records at `fps` Hz from `start()` until `stop()`
 • Dumps one compressed NPZ per session: images, joint states, vision←body pose, … 
@@ -376,11 +376,14 @@ class DemoRecorder:
 
         # 1. --- Arm joint angles + velocities --------------------------------------------------
         q, dq, names = [], [], []
+        gripper_load = 0.0
         for j in kin.joint_states:
             if j.name.startswith("arm0."):
                 names.append(j.name)
                 q.append(j.position.value)
                 dq.append(j.velocity.value)
+                if j.name == "arm0.f1x":
+                    gripper_load = j.load.value
 
         if self._joint_names is None:
             self._joint_names = np.array(names)
@@ -417,6 +420,7 @@ class DemoRecorder:
         return dict(
             arm_q = np.array(q,  dtype=np.float32),
             arm_dq= np.array(dq, dtype=np.float32),
+            gripper_load = np.array([gripper_load], dtype=np.float32),
             ee_pose = hand_vec,
             ee_force = wrench,
             gripper  = gripper,

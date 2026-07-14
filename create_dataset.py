@@ -133,7 +133,7 @@ def build_hdf5_from_npz(demos_dir: Path, h5_path: Path):
 
             # copy other arrays (keep T‑1 length) ------------------------------
             for key in ("arm_q", "arm_dq", "vision_in_body",
-                        "body_vel", "gripper", "ee_force", "t"):
+                        "body_vel", "gripper", "gripper_load", "ee_force", "t"):
                 if key in data.files:
                     if key == "t":
                         arr = data[key].astype(np.float64)
