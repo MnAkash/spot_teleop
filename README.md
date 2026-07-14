@@ -119,7 +119,7 @@ echo $BOSDYN_CLIENT_PASSWORD
 ---
 
 ## Setup Meta Quest Controller
-Follow the guidelines in the [`OculusReader`](https://github.com/rail-berkeley/oculus_reader) repo for setting up Meta Quest Controller over WiFi or USB.
+Follow the guidelines in the [`OculusReader`](https://github.com/jborbik/oculus_reader) repo for setting up Meta Quest Controller over WiFi or USB.
 
 ---
 
