@@ -71,6 +71,29 @@ def load_demo(h5_path: Path, demo_id: int):
         return images, eef_pos, eef_quat
 
 
+def estimate_marker_pose(corners, marker_size, K, dist):
+    '''Estimate a single marker's pose via solvePnP.
+
+    Replacement for cv2.aruco.estimatePoseSingleMarkers, which was removed in
+    OpenCV 4.7+. Object points follow the same corner ordering ArUco uses
+    (top-left, top-right, bottom-right, bottom-left) in the marker frame.
+    '''
+    half = marker_size / 2.0
+    obj_points = np.array([
+        [-half, half, 0.0],
+        [half, half, 0.0],
+        [half, -half, 0.0],
+        [-half, -half, 0.0],
+    ], dtype=np.float32)
+    img_points = corners.reshape(4, 2).astype(np.float32)
+    ok, rvec, tvec = cv2.solvePnP(
+        obj_points, img_points, K, dist, flags=cv2.SOLVEPNP_IPPE_SQUARE
+    )
+    if not ok:
+        return None, None
+    return rvec, tvec
+
+
 def build_detector(dict_name: str):
     if dict_name not in ARUCO_DICTS:
         raise ValueError(f"Unsupported aruco dict '{dict_name}'")
@@ -145,10 +168,11 @@ def main():
         if match_idx is None:
             continue
 
-        rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers(
-            [corners[match_idx]], args.marker_size, K, dist
+        rvec, tvec = estimate_marker_pose(
+            corners[match_idx], args.marker_size, K, dist
         )
-        rvec, tvec = rvecs[0], tvecs[0]
+        if rvec is None:
+            continue
         R_tc, _ = cv2.Rodrigues(rvec)
         t_tc = tvec.reshape(3, 1)
 
@@ -187,7 +211,7 @@ def main():
             rows.append(f"    [{row_str}]")
         return "np.array([\n" + ",\n".join(rows) + "\n])"
 
-    print("\Gripper -> Camera (gTc):")
+    print("\nGripper -> Camera (gTc):")
     print(_format_np_array(T_cam2gripper))
     return 0
 
