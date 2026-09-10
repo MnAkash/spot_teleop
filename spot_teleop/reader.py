@@ -138,7 +138,7 @@ class OculusReader:
                 eprint('Run `adb shell ip route` to verify the IP address.')
                 exit(1)
             else:
-                self.get_device(client=client, retry=retry+1)
+                self.get_network_device(client=client, retry=retry+1)
         return device
 
     def get_usb_device(self, client):
