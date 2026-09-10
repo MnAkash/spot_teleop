@@ -121,6 +121,77 @@ class OculusReader:
         if hasattr(self, 'ping_thread'):
             self.ping_thread.join()
 
+    @staticmethod
+    def _is_network_serial(serial):
+        host = serial.split(':', 1)[0]
+        return host.count('.') == 3
+
+    @staticmethod
+    def _ip_cache_path():
+        return os.path.join(os.path.expanduser('~'), '.cache', 'spot_teleop', 'meta_quest_ip')
+
+    @classmethod
+    def _cached_ip(cls):
+        try:
+            with open(cls._ip_cache_path(), 'r', encoding='utf-8') as f:
+                ip = f.read().strip()
+            if ip.count('.') == 3:
+                return ip
+        except OSError:
+            pass
+        return None
+
+    @classmethod
+    def _remember_ip(cls, ip_address):
+        if ip_address is None or ip_address.count('.') != 3:
+            return
+        path = cls._ip_cache_path()
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(ip_address + '\n')
+        except OSError:
+            pass
+
+    @staticmethod
+    def _extract_device_ip(device):
+        try:
+            output = device.shell('ip -o -4 addr show wlan0')
+            for line in output.splitlines():
+                fields = line.replace('\r', '').split()
+                if len(fields) >= 4 and '/' in fields[3]:
+                    ip = fields[3].split('/')[0]
+                    if ip.count('.') == 3:
+                        return ip
+        except Exception:
+            pass
+
+        try:
+            output = device.shell('ip route')
+            for line in output.splitlines():
+                parts = line.replace('\r', '').split()
+                if 'src' in parts:
+                    ip = parts[parts.index('src') + 1]
+                    if ip.count('.') == 3:
+                        return ip
+        except Exception:
+            pass
+
+        return None
+
+    def _print_usb_setup_help(self):
+        eprint('Could not find a Meta Quest over WiFi.')
+        eprint('If you know the headset IP, run:')
+        eprint('  META_QUEST_IP=<quest-ip> python teleop_spot.py --teleop-type meta')
+        eprint('or:')
+        eprint('  python teleop_spot.py --teleop-type meta --meta-quest-ip <quest-ip>')
+        eprint('If the headset IP changed or ADB has not been paired/enabled for WiFi yet:')
+        eprint('  1. Connect the headset to this computer with USB.')
+        eprint('  2. Put on the headset and allow the USB debugging prompt.')
+        eprint('  3. Make sure the headset and this computer are on the same WiFi network.')
+        eprint('  4. Run teleop again, or run `./check_meta.sh` to verify the detected IP.')
+        eprint('After that, teleop should reconnect over WiFi automatically while ADB remembers the device.')
+
     def get_network_device(self, client, retry=0):
         try:
             client.remote_connect(self.ip_address, self.port)
@@ -138,7 +209,8 @@ class OculusReader:
                 eprint('Run `adb shell ip route` to verify the IP address.')
                 exit(1)
             else:
-                self.get_network_device(client=client, retry=retry+1)
+                return self.get_network_device(client=client, retry=retry+1)
+        self._remember_ip(self.ip_address)
         return device
 
     def get_usb_device(self, client):
@@ -154,20 +226,85 @@ class OculusReader:
         eprint('Run `adb devices` to verify that the device is visible.')
         exit(1)
 
+    def get_auto_wifi_device(self, client):
+        try:
+            devices = client.devices()
+        except RuntimeError:
+            os.system('adb devices')
+            devices = client.devices()
+
+        for device in devices:
+            if self._is_network_serial(device.serial):
+                self.ip_address = device.serial.split(':', 1)[0]
+                self._remember_ip(self.ip_address)
+                print(f'Using Meta Quest wireless ADB device at {self.ip_address}:{self.port}.')
+                return device
+
+        cached_ip = self._cached_ip()
+        if cached_ip is not None:
+            print(f'Trying cached Meta Quest WiFi IP: {cached_ip}:{self.port}...')
+            try:
+                client.remote_connect(cached_ip, self.port)
+                device = client.device(f'{cached_ip}:{self.port}')
+            except RuntimeError:
+                device = None
+            if device is not None:
+                self.ip_address = cached_ip
+                print(f'Connected to Meta Quest over WiFi at {self.ip_address}:{self.port}.')
+                return device
+            eprint(f'Cached Meta Quest IP did not respond: {cached_ip}:{self.port}')
+
+        usb_device = None
+        for device in devices:
+            if not self._is_network_serial(device.serial):
+                usb_device = device
+                break
+
+        if usb_device is None:
+            self._print_usb_setup_help()
+            exit(1)
+
+        ip_address = self._extract_device_ip(usb_device)
+        if ip_address is None:
+            self._print_usb_setup_help()
+            eprint('ADB can see the headset over USB, but could not read a WiFi IP from it.')
+            exit(1)
+
+        self.ip_address = ip_address
+        print(f'Found Meta Quest WiFi IP via USB: {self.ip_address}')
+        print(f'Enabling wireless ADB on port {self.port}...')
+        result = subprocess.run(
+            ['adb', '-s', usb_device.serial, 'tcpip', str(self.port)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        if result.returncode != 0:
+            eprint('Failed to enable wireless ADB.')
+            eprint(result.stderr.strip() or result.stdout.strip())
+            exit(1)
+
+        time.sleep(1.0)
+        print(f'Connecting to Meta Quest over WiFi at {self.ip_address}:{self.port}...')
+        return self.get_network_device(client)
+
     def get_device(self):
         # Default is "127.0.0.1" and 5037
         client = AdbClient(host="127.0.0.1", port=5037) 
         if self.ip_address is not None:
             return self.get_network_device(client)
         else:
-            return self.get_usb_device(client)
+            return self.get_auto_wifi_device(client)
 
     def install(self, APK_path=None, verbose=True, reinstall=False):
         try:
             installed = self.device.is_installed(self.APK_name)
             if not installed or reinstall:
                 if APK_path is None:
-                    APK_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'APK', 'teleop-debug.apk')
+                    apk_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'APK')
+                    APK_path = os.path.join(apk_dir, 'OculusTeleop-debug.apk')
+                    if not os.path.exists(APK_path):
+                        APK_path = os.path.join(apk_dir, 'teleop-debug.apk')
                 success = self.device.install(APK_path, test=True, reinstall=reinstall)
                 installed = self.device.is_installed(self.APK_name)
                 if installed and success:
@@ -285,13 +422,13 @@ class OculusReader:
 
 def get_connecteed_device_ip():
     try:
-        result = subprocess.run(['adb', 'shell', 'ip', 'route'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        lines = result.stdout.strip().split('\n')
-        for line in lines:  # Skip the first line which is a header
-            if 'src' in line:
-                ip = line.split()[-1]
-                if ip.count('.') == 3:  # Simple check for IP address format
-                    return ip
+        client = AdbClient(host="127.0.0.1", port=5037)
+        for device in client.devices():
+            if OculusReader._is_network_serial(device.serial):
+                return device.serial.split(':', 1)[0]
+            ip = OculusReader._extract_device_ip(device)
+            if ip is not None:
+                return ip
         print("Has no access! Please connect the device via USB and allow access.")
         return None
     except Exception as e:

@@ -3,6 +3,7 @@ set -u
 
 ADB="${ADB:-adb}"
 ADB_TCP_PORT="${ADB_TCP_PORT:-5555}"
+IP_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/spot_teleop/meta_quest_ip"
 
 if ! command -v "$ADB" >/dev/null 2>&1; then
     echo "adb not found. Install android-tools-adb or set ADB=/path/to/adb."
@@ -55,6 +56,9 @@ for device in "${DEVICES[@]}"; do
     if [ -n "$ip_addr" ]; then
         echo "  WiFi IP: $ip_addr"
         echo "  ADB connect command: $ADB connect $ip_addr:$ADB_TCP_PORT"
+        mkdir -p "$(dirname "$IP_CACHE")"
+        printf '%s\n' "$ip_addr" > "$IP_CACHE"
+        echo "  Cached IP: $IP_CACHE"
     else
         echo "  WiFi IP: not found. Make sure the headset is connected to WiFi."
     fi

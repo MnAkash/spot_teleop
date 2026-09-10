@@ -35,7 +35,6 @@ from bosdyn.client.math_helpers import Quat
 
 from spot_teleop.camera_streamer import CameraStreamer
 from spot_teleop.demo_recorder import DemoRecorder
-from spot_teleop.reader import get_connecteed_device_ip
 from spot_teleop.spot_controller import SpotRobotController
 from spot_teleop.utils.spot_utils import map_controller_to_robot, mat_to_se3
 from spot_teleop.utils.teleop_inputs import KeyboardInputHelper, MetaInputHelper, SpaceMouseInputHelper
@@ -564,7 +563,7 @@ class SpotVRTeleop:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--teleop-type", choices=["meta", "keyboard", "spacemouse"], default="meta")
-    parser.add_argument("--meta-quest-ip", default=os.environ.get("META_QUEST_IP", "192.168.1.28"))
+    parser.add_argument("--meta-quest-ip", default=os.environ.get("META_QUEST_IP"))
     parser.add_argument("--force-limit-disable",action="store_true", help="Disable force-aware arm limiting (enabled by default).",)
     parser.add_argument("--use-depth", action="store_true", help="Record camera depth streams (disabled by default).")
     parser.add_argument("--demo-image-preview", action="store_true")
@@ -578,12 +577,6 @@ def main():
     print(f"user: {user}, password: {len(password) * '*'}")
 
     meta_ip = args.meta_quest_ip
-    if args.teleop_type == "meta" and (meta_ip is None or str(meta_ip).strip() == ""):
-        meta_ip = get_connecteed_device_ip()
-        if meta_ip is None:
-            print("[!] Could not find connected Meta Quest device IP via ADB.")
-            print("    Please ensure ADB is set up and allowed access.")
-            return
 
     home_pose = [0.55, 0.0, 0.55, 0.0, 0.5, 0, 0.8660254]
     # home_pose = [0.6328, 0.0054, 0.3568, -0.7006, -0.1321, -0.018, 0.701]
