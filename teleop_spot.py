@@ -442,7 +442,7 @@ class SpotVRTeleop:
                     print(f"[!] Error sending base command: {e}")
             else:
                 try:
-                    trigger_val = 1 - sm_buttons[1] if len(sm_buttons) > 1 else 1
+                    trigger_val = 1 - sm_buttons[0] if len(sm_buttons) > 0 else 1
                     self.spot.send_gripper(trigger_val)
 
                     move_commanded = any(abs(axes[k]) > 0.0 for k in ["x", "y", "z", "roll", "pitch", "yaw"])
@@ -564,7 +564,7 @@ class SpotVRTeleop:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--teleop-type", choices=["meta", "keyboard", "spacemouse"], default="meta")
-    parser.add_argument("--meta-quest-ip", default=os.environ.get("META_QUEST_IP", "192.168.1.35"))
+    parser.add_argument("--meta-quest-ip", default=os.environ.get("META_QUEST_IP", "192.168.1.28"))
     parser.add_argument("--force-limit-disable",action="store_true", help="Disable force-aware arm limiting (enabled by default).",)
     parser.add_argument("--use-depth", action="store_true", help="Record camera depth streams (disabled by default).")
     parser.add_argument("--demo-image-preview", action="store_true")
