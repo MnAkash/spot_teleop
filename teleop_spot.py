@@ -72,8 +72,36 @@ class SpotVRTeleop:
         if self.teleop_type not in {"meta", "keyboard", "spacemouse"}:
             raise ValueError(f"Unsupported teleop_type: {teleop_type}")
 
-        self.spot = SpotRobotController(robot_ip, username, password)
         self.logger = logging.getLogger("spot-teleop")
+
+        # Input devices are connected before Spot: if the controller is not
+        # reachable we fail here instead of after a slow robot connection.
+        self.keyboard_input: KeyboardInputHelper | None = KeyboardInputHelper(
+            enable_base_keys=(self.teleop_type == "keyboard")
+        )
+        try:
+            self.keyboard_input.start()
+        except Exception as e:
+            if self.teleop_type == "keyboard":
+                raise RuntimeError(f"Keyboard teleop requires pynput. {e}") from e
+            self.logger.warning("Keyboard shortcuts disabled (%s).", e)
+            self.keyboard_input = None
+
+        self.meta_input: MetaInputHelper | None = None
+        self.spacemouse_input: SpaceMouseInputHelper | None = None
+        try:
+            if self.teleop_type == "meta":
+                print("Connecting to Meta Quest ...")
+                self.meta_input = MetaInputHelper(meta_quest_ip)
+            elif self.teleop_type == "spacemouse":
+                self.spacemouse_input = SpaceMouseInputHelper()
+        except BaseException:
+            self.close()
+            raise
+
+        print(f"Connecting to Spot at {robot_ip} ...")
+        print(f"user: {username}, password: {len(password) * '*'}")
+        self.spot = SpotRobotController(robot_ip, username, password)
         self.home_pose = self.DEFAULT_POSE if home_pose is None else home_pose
         self.demo_image_preview = demo_image_preview
         self.external_camera = None
@@ -113,25 +141,6 @@ class SpotVRTeleop:
         self.force_limit_enabled = bool(force_limit_enable)
         self._prev_meta_abxy = {"a": False, "b": False, "x": False, "y": False}
         self._kb_gripper_open = True
-
-        # Input helpers
-        self.keyboard_input: KeyboardInputHelper | None = KeyboardInputHelper(
-            enable_base_keys=(self.teleop_type == "keyboard")
-        )
-        try:
-            self.keyboard_input.start()
-        except Exception as e:
-            if self.teleop_type == "keyboard":
-                raise RuntimeError(f"Keyboard teleop requires pynput. {e}") from e
-            self.logger.warning("Keyboard shortcuts disabled (%s).", e)
-            self.keyboard_input = None
-
-        self.meta_input: MetaInputHelper | None = None
-        self.spacemouse_input: SpaceMouseInputHelper | None = None
-        if self.teleop_type == "meta":
-            self.meta_input = MetaInputHelper(meta_quest_ip)
-        elif self.teleop_type == "spacemouse":
-            self.spacemouse_input = SpaceMouseInputHelper()
 
     # ---------------- utility ---------------- #
     def close(self):
@@ -573,24 +582,25 @@ def main():
     user = os.environ.get("BOSDYN_CLIENT_USERNAME", "user")
     password = os.environ.get("BOSDYN_CLIENT_PASSWORD", "password")
 
-    print(f"Connecting to Spot at {robot_ip} ...")
-    print(f"user: {user}, password: {len(password) * '*'}")
-
     meta_ip = args.meta_quest_ip
 
     home_pose = [0.55, 0.0, 0.55, 0.0, 0.5, 0, 0.8660254]
     # home_pose = [0.6328, 0.0054, 0.3568, -0.7006, -0.1321, -0.018, 0.701]
-    teleop = SpotVRTeleop(
-        robot_ip,
-        user,
-        password,
-        teleop_type=args.teleop_type,
-        force_limit_enable=not args.force_limit_disable,
-        use_depth=args.use_depth,
-        home_pose=home_pose,
-        meta_quest_ip=meta_ip,
-        demo_image_preview=args.demo_image_preview,
-    )
+    try:
+        teleop = SpotVRTeleop(
+            robot_ip,
+            user,
+            password,
+            teleop_type=args.teleop_type,
+            force_limit_enable=not args.force_limit_disable,
+            use_depth=args.use_depth,
+            home_pose=home_pose,
+            meta_quest_ip=meta_ip,
+            demo_image_preview=args.demo_image_preview,
+        )
+    except RuntimeError as e:
+        print(f"[!] {e}")
+        raise SystemExit(1)
     teleop.run()
 
 if __name__ == "__main__":

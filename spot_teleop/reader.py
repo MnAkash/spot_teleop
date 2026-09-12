@@ -180,17 +180,27 @@ class OculusReader:
         return None
 
     def _print_usb_setup_help(self):
-        eprint('Could not find a Meta Quest over WiFi.')
-        eprint('If you know the headset IP, run:')
-        eprint('  META_QUEST_IP=<quest-ip> python teleop_spot.py --teleop-type meta')
-        eprint('or:')
-        eprint('  python teleop_spot.py --teleop-type meta --meta-quest-ip <quest-ip>')
-        eprint('If the headset IP changed or ADB has not been paired/enabled for WiFi yet:')
-        eprint('  1. Connect the headset to this computer with USB.')
-        eprint('  2. Put on the headset and allow the USB debugging prompt.')
-        eprint('  3. Make sure the headset and this computer are on the same WiFi network.')
-        eprint('  4. Run teleop again, or run `./check_meta.sh` to verify the detected IP.')
-        eprint('After that, teleop should reconnect over WiFi automatically while ADB remembers the device.')
+        eprint('Meta Quest not found on WiFi.')
+        eprint('  1. Plug the headset in with USB.')
+        eprint('  2. Put it on and allow the USB debugging prompt.')
+        eprint('  3. Keep it on the same WiFi as this computer.')
+        eprint('Press Enter to retry. Teleop switches to WiFi, then you can unplug.')
+        eprint('Know the IP? Use --meta-quest-ip <ip>.')
+
+    @staticmethod
+    def _prompt_usb_retry():
+        """Ask the user to plug the headset in over USB, then retry.
+
+        Returns False when there is no terminal to ask on, or the user gives up.
+        """
+        if sys.stdin is None or not sys.stdin.isatty():
+            return False
+        try:
+            input('Plug in the headset, then press Enter to retry (Ctrl+C to quit): ')
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return False
+        return True
 
     def get_network_device(self, client, retry=0):
         try:
@@ -201,15 +211,12 @@ class OculusReader:
         device = client.device(self.ip_address + ':' + str(self.port))
 
         if device is None:
-            if retry==1:
+            if retry == 1:
                 os.system('adb tcpip ' + str(self.port))
-            if retry==2:
-                eprint('Make sure that device is running and is available at the IP address specified as the OculusReader argument `ip_address`.')
-                eprint('Currently provided IP address:', self.ip_address)
-                eprint('Run `adb shell ip route` to verify the IP address.')
-                exit(1)
-            else:
-                return self.get_network_device(client=client, retry=retry+1)
+            if retry >= 2:
+                eprint('No Meta Quest answered at ' + self.ip_address + ':' + str(self.port) + '.')
+                return None
+            return self.get_network_device(client=client, retry=retry + 1)
         self._remember_ip(self.ip_address)
         return device
 
@@ -222,11 +229,11 @@ class OculusReader:
         for device in devices:
             if device.serial.count('.') < 3:
                 return device
-        eprint('Device not found. Make sure that device is running and is connected over USB')
-        eprint('Run `adb devices` to verify that the device is visible.')
-        exit(1)
+        eprint('No headset on USB. Check `adb devices`.')
+        return None
 
-    def get_auto_wifi_device(self, client):
+    def _find_wifi_device(self, client, show_help=True):
+        """One attempt at reaching the headset. Returns None instead of exiting."""
         try:
             devices = client.devices()
         except RuntimeError:
@@ -252,7 +259,7 @@ class OculusReader:
                 self.ip_address = cached_ip
                 print(f'Connected to Meta Quest over WiFi at {self.ip_address}:{self.port}.')
                 return device
-            eprint(f'Cached Meta Quest IP did not respond: {cached_ip}:{self.port}')
+            eprint(f'Saved IP {cached_ip} did not answer.')
 
         usb_device = None
         for device in devices:
@@ -261,14 +268,16 @@ class OculusReader:
                 break
 
         if usb_device is None:
-            self._print_usb_setup_help()
-            exit(1)
+            if show_help:
+                self._print_usb_setup_help()
+            else:
+                eprint('Still no headset found.')
+            return None
 
         ip_address = self._extract_device_ip(usb_device)
         if ip_address is None:
-            self._print_usb_setup_help()
-            eprint('ADB can see the headset over USB, but could not read a WiFi IP from it.')
-            exit(1)
+            eprint('Headset is on USB but has no WiFi address. Connect it to WiFi.')
+            return None
 
         self.ip_address = ip_address
         print(f'Found Meta Quest WiFi IP via USB: {self.ip_address}')
@@ -280,21 +289,34 @@ class OculusReader:
             text=True,
         )
         if result.returncode != 0:
-            eprint('Failed to enable wireless ADB.')
+            eprint('Could not switch the headset to wireless ADB.')
             eprint(result.stderr.strip() or result.stdout.strip())
-            exit(1)
+            return None
 
         time.sleep(1.0)
         print(f'Connecting to Meta Quest over WiFi at {self.ip_address}:{self.port}...')
         return self.get_network_device(client)
 
+    def get_auto_wifi_device(self, client):
+        show_help = True
+        while True:
+            device = self._find_wifi_device(client, show_help=show_help)
+            if device is not None:
+                return device
+            show_help = False
+            if not self._prompt_usb_retry():
+                raise RuntimeError('Meta Quest not connected.')
+
     def get_device(self):
         # Default is "127.0.0.1" and 5037
-        client = AdbClient(host="127.0.0.1", port=5037) 
+        client = AdbClient(host="127.0.0.1", port=5037)
         if self.ip_address is not None:
-            return self.get_network_device(client)
-        else:
-            return self.get_auto_wifi_device(client)
+            device = self.get_network_device(client)
+            if device is not None:
+                return device
+            eprint(f'Headset not reachable at {self.ip_address}. Searching instead...')
+            self.ip_address = None
+        return self.get_auto_wifi_device(client)
 
     def install(self, APK_path=None, verbose=True, reinstall=False):
         try:
@@ -314,9 +336,7 @@ class OculusReader:
             elif verbose:
                 print('APK is already installed.')
         except RuntimeError:
-            eprint('Device is visible but could not be accessed.')
-            eprint('Run `adb devices` to verify that the device is visible and accessible.')
-            eprint('If you see "no permissions" next to the device serial, please put on the Oculus Quest and allow the access.')
+            eprint('Headset found but not authorized. Put it on and allow access.')
             exit(1)
 
     def uninstall(self, verbose=True):
@@ -334,9 +354,7 @@ class OculusReader:
             elif verbose:
                 print('APK is not installed.')
         except RuntimeError:
-            eprint('Device is visible but could not be accessed.')
-            eprint('Run `adb devices` to verify that the device is visible and accessible.')
-            eprint('If you see "no permissions" next to the device serial, please put on the Oculus Quest and allow the access.')
+            eprint('Headset found but not authorized. Put it on and allow access.')
             exit(1)
 
     @staticmethod
